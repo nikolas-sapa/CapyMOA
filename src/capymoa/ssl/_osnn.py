@@ -30,10 +30,16 @@ def Euclidean_Distances(a, b):
 
 
 class OSNeuralNetwork(nn.Module):
-    def __init__(self, num_center, n_out, window_size, beta=1, gamma=1):
+    def __init__(self, num_center, n_out, window_size, beta=1, gamma=1, seed=1):
         super().__init__()
         self.n_out = n_out
         self.num_centers = num_center
+
+        # All stochastic steps (weight init, center sampling, fallback
+        # center choice) draw from these private generators; the process
+        # global RNGs are left untouched.
+        self.py_rng = random.Random(seed)
+        self.torch_rng = torch.Generator().manual_seed(seed)
 
         self.window_size = window_size
         self.data_window = torch.zeros(window_size, 1)
@@ -57,9 +63,10 @@ class OSNeuralNetwork(nn.Module):
         return class_score
 
     def initialize_weights(self):
+        generator = self.torch_rng
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
-                m.weight.data.normal_(0, 0.02)
+                m.weight.data.normal_(0, 0.02, generator=generator)
                 m.bias.data.zero_()
 
     def update_sigma(self):
@@ -81,10 +88,15 @@ class OSNeuralNetwork(nn.Module):
             )
             self.label_index = torch.zeros((self.window_size, 1), dtype=torch.float32)
 
-            self.linear = nn.Sequential(
-                nn.Linear(self.num_centers + data.size(1), self.n_out, bias=True),
-                nn.Sigmoid(),
-            )
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(int(self.torch_rng.initial_seed()))
+                self.linear = nn.Sequential(
+                    nn.Linear(self.num_centers + data.size(1), self.n_out, bias=True),
+                    nn.Sigmoid(),
+                )
+                # Continue the private sequence from the state the init
+                # consumed, while the fork still holds it.
+                self.torch_rng.set_state(torch.get_rng_state())
 
         for i in range(data.size(0)):
             self.data_window = torch.cat(
@@ -107,7 +119,9 @@ class OSNeuralNetwork(nn.Module):
 
             if self.i == self.window_size:
                 index = torch.LongTensor(
-                    random.sample(range(self.data_window.size(0)), self.num_centers)
+                    self.py_rng.sample(
+                        range(self.data_window.size(0)), self.num_centers
+                    )
                 )
                 self.centers = torch.index_select(self.data_window, 0, index)
                 self.initialize_weights()
@@ -182,7 +196,11 @@ class OSNeuralNetwork(nn.Module):
                     self.centers[i] = a / c
             else:
                 self.centers[i] = self.data_window[
-                    torch.randint(self.data_window.shape[0], size=(1,))
+                    torch.randint(
+                        self.data_window.shape[0],
+                        size=(1,),
+                        generator=self.torch_rng,
+                    )
                 ][0]
 
         self.update_sigma()
@@ -280,16 +298,12 @@ class OSNN(ClassifierSSL):
             window_size=window_size,
             beta=beta,
             gamma=gamma,
+            seed=seed,
         )
 
         self.window_size = window_size
         self.optim_steps = optim_steps
         self.loss_f = def_loss(model=self.Network)
-
-        # Set seeds
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
 
         self.i = -1
 
