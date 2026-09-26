@@ -67,3 +67,23 @@ def test_scores_stable_across_processes():
 
 def test_same_seed_same_scores_in_process():
     assert _score_trace() == _score_trace()
+
+
+def test_different_seed_different_scores():
+    """The seed must actually reach the sketch: two seeds on the same data
+    should generally disagree. Guards against a future refactor that makes
+    the digest seed-independent (which would also collapse the ensemble
+    members' sketch diversity)."""
+
+    def trace(seed):
+        stream = TinyBlobs()
+        model = RSHash(schema=stream.get_schema(), m=300, s=64, w=4, p=10000, seed=seed)
+        scores = []
+        for i, instance in enumerate(stream):
+            if i >= 200:
+                break
+            scores.append(model.score_instance(instance))
+            model.train(instance)
+        return scores
+
+    assert trace(42) != trace(43)
