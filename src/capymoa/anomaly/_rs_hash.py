@@ -13,15 +13,28 @@ __all__ = ["RSHash"]
 class RSHashCountMinSketch:
     """Count-min sketch of ``w`` tables, each with a hash range of ``p``.
 
+    The sketch draws its hash keys from ``rng``, so the caller must pass a
+    seeded generator. A generator built from system entropy is not accepted
+    here, because it would make the sketch, and so any detector built on it,
+    give a different answer on every run. Every other class in this module
+    takes a required generator for the same reason.
+
     :param p: Range of each hash function, i.e. cells per table.
     :param w: Number of pairwise independent hash tables.
-    :param rng: Source of randomness for the hash keys.
+    :param rng: Source of randomness for the hash keys. Must be a seeded
+        generator, as given by :func:`numpy.random.default_rng`.
     """
 
     def __init__(
         self, p: int = 10_000, w: int = 4, rng: np.random.Generator | None = None
     ):
-        rng = rng if rng is not None else np.random.default_rng()
+        if rng is None:
+            raise ValueError(
+                "RSHashCountMinSketch requires a seeded rng, as given by "
+                "numpy.random.default_rng(seed). Falling back to system entropy "
+                "would make the sketch non-reproducible."
+            )
+
         self.p = p
         self.w = w
         self.hash_table = np.zeros((w, p), dtype=np.int32)

@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from functools import partial
 
+import numpy as np
 import pytest
 
 from capymoa.anomaly import (
@@ -14,6 +15,7 @@ from capymoa.anomaly import (
     StreamingIsolationForest,
     StreamRHF,
 )
+from capymoa.anomaly._rs_hash import RSHashCountMinSketch
 from capymoa.anomaly.datasets import TinyBlobs
 from capymoa.base import AnomalyDetector, MOAClassifier
 from capymoa.core.moa._cli import cli_str_classifier
@@ -174,3 +176,30 @@ def test_anomaly_detectors(
     if isinstance(learner, MOAClassifier) and cli_string is not None:
         cli_str = cli_str_classifier(learner).strip("()")
         assert cli_str == cli_string, "CLI does not match expected value"
+
+
+def test_rshash_sketch_rejects_missing_rng():
+    """RSHashCountMinSketch must not build its hash keys from system entropy.
+
+    A silently entropy-seeded sketch gives a different detector on every run,
+    so a caller that forgets the generator has to be told, not defaulted.
+    """
+    with pytest.raises(ValueError, match="requires a seeded rng"):
+        RSHashCountMinSketch(p=64, w=2)
+
+
+def test_rshash_sketch_is_reproducible_from_a_seed():
+    """Two sketches built from the same seed must agree on their hash keys.
+
+    This is the property the entropy default used to break, so pin it directly
+    on the sketch rather than only through the detector that wraps it.
+    """
+    first = RSHashCountMinSketch(p=64, w=4, rng=np.random.default_rng(7))
+    second = RSHashCountMinSketch(p=64, w=4, rng=np.random.default_rng(7))
+
+    assert first.hash_keys == second.hash_keys
+
+    # A different seed must give different keys, otherwise the "seeded"
+    # requirement is satisfied by a constant.
+    other = RSHashCountMinSketch(p=64, w=4, rng=np.random.default_rng(8))
+    assert other.hash_keys != first.hash_keys
