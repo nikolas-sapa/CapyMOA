@@ -1,3 +1,4 @@
+import secrets
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import Any, overload
@@ -53,10 +54,10 @@ class AnomalyDetector(LearnerParamsMixin, ABC):
 
     Attributes:
     - schema: The schema representing the instances. Defaults to None.
-    - random_seed: The random seed for reproducibility. Defaults to 1. `None` means "do not seed", so the component draws from system entropy.
+    - random_seed: The random seed for reproducibility. Defaults to `None`. `None` means "do not seed", so the component draws from system entropy.
     """
 
-    def __init__(self, schema: Schema, random_seed: int | None = 1):
+    def __init__(self, schema: Schema, random_seed: int | None = None):
         self.random_seed = random_seed
         self.schema = schema
         if self.schema is None:
@@ -91,7 +92,7 @@ class MOAAnomalyDetector(AnomalyDetector):
         self,
         schema=None,
         CLI: str | None = None,
-        random_seed=1,
+        random_seed=None,
         moa_learner=None,
     ): ...
 
@@ -100,7 +101,7 @@ class MOAAnomalyDetector(AnomalyDetector):
         self,
         schema=None,
         CLI: None = None,
-        random_seed=1,
+        random_seed=None,
         moa_learner=None,
         *,
         options: Mapping[str, Any],
@@ -110,7 +111,7 @@ class MOAAnomalyDetector(AnomalyDetector):
         self,
         schema=None,
         CLI=None,
-        random_seed=1,
+        random_seed=None,
         moa_learner=None,
         options: Mapping[str, Any] | None = None,
     ):
@@ -122,8 +123,11 @@ class MOAAnomalyDetector(AnomalyDetector):
         self.CLI = CLI
         self.moa_learner = moa_learner
 
-        if random_seed is not None:
-            self.moa_learner.setRandomSeed(random_seed)
+        # MOA learners fall back to a fixed seed, so an explicit seed drawn
+        # from system entropy is needed for `None` to mean "do not seed".
+        if random_seed is None:
+            random_seed = secrets.randbelow(2**31)
+        self.moa_learner.setRandomSeed(random_seed)
 
         if self.schema is not None:
             self.moa_learner.setModelContext(self.schema.get_moa_header())

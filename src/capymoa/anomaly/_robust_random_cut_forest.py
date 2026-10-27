@@ -529,7 +529,7 @@ class RobustRandomCutForest(AnomalyDetector):
         machine learning (pp. 2712-2721). PMLR.
     """
 
-    def __init__(self, schema: Schema, tree_size=1000, n_trees=100, random_seed=42):
+    def __init__(self, schema: Schema, tree_size=1000, n_trees=100, random_seed=None):
         super().__init__(schema, random_seed)
         self.tree_size = tree_size
         self.n_trees = n_trees

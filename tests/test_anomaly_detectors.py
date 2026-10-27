@@ -75,7 +75,13 @@ def _make_autoencoder(**kwargs):
     "learner_constructor,auc,cli_string",
     [
         (
-            partial(HalfSpaceTrees, window_size=100, number_of_trees=25, max_depth=15),
+            partial(
+                HalfSpaceTrees,
+                window_size=100,
+                number_of_trees=25,
+                max_depth=15,
+                random_seed=1,
+            ),
             0.84,
             None,
         ),
@@ -85,19 +91,28 @@ def _make_autoencoder(**kwargs):
                 window_size=100,
                 num_trees=32,
                 max_leaf_samples=32,
+                random_seed=1,
             ),
             0.75,
             None,
         ),
         pytest.param(
             partial(
-                _make_autoencoder, hidden_layer=2, learning_rate=0.5, threshold=0.6
+                _make_autoencoder,
+                hidden_layer=2,
+                learning_rate=0.5,
+                threshold=0.6,
+                random_seed=1,
             ),
             0.85,
             None,
             marks=pytest.mark.torch,
         ),
-        (partial(StreamRHF, num_trees=5, max_height=3), 0.82, None),
+        (
+            partial(StreamRHF, num_trees=5, max_height=3, random_seed=0),
+            0.82,
+            None,
+        ),
         (
             partial(
                 StreamingIsolationForest,

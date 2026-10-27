@@ -116,7 +116,7 @@ class RSHash(AnomalyDetector):
     >>> from capymoa.anomaly.evaluate import AnomalyDetectionEvaluator
     >>> stream = TinyBlobs()
     >>> schema = stream.get_schema()
-    >>> learner = RSHash(schema, s=256)
+    >>> learner = RSHash(schema, s=256, seed=42)
     >>> evaluator = AnomalyDetectionEvaluator(schema)
     >>> while stream.has_more_instances():
     ...     instance = stream.next_instance()
@@ -135,7 +135,7 @@ class RSHash(AnomalyDetector):
         s: int = 1000,
         w: int = 4,
         p: int = 10_000,
-        seed: int = 42,
+        seed: int | None = None,
     ):
         """Construct an RS-Hash anomaly detector.
 
@@ -144,7 +144,7 @@ class RSHash(AnomalyDetector):
         :param s: Sliding window length.
         :param w: Number of hash tables per component.
         :param p: Hash range per component.
-        :param seed: Random seed.
+        :param seed: Random seed. `None` draws from system entropy.
         """
 
         super().__init__(schema, random_seed=seed)

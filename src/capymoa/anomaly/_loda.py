@@ -88,7 +88,7 @@ class Loda(AnomalyDetector):
         n_projections: int = 100,
         window_size: int = 256,
         max_bins: str | int = "auto",
-        random_seed: int = 42,
+        random_seed: int | None = None,
     ):
         """Initialize the Loda anomaly detector.
 
