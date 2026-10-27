@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from typing import Any, overload
 
 from jpype import _jpype
 from moa.core import Utils
 
+from capymoa.base._learner_params import LearnerParamsMixin
 from capymoa.base._regressor import MOARegressor, Regressor
 from capymoa.core import Instance, LabelIndex
+from capymoa.core.moa._options import set_moa_options
 from capymoa.stream._stream import Schema
 
 ##############################################################
@@ -33,12 +37,12 @@ class MOAPredictionIntervalLearner(MOARegressor, PredictionIntervalLearner):
     def predict(self, instance):
         prediction_PI = self.moa_learner.getVotesForInstance(instance.java_instance)
         if len(prediction_PI) != 3:
-            return [0, 0, 0]
-        else:
-            return prediction_PI
+            return [0.0, 0.0, 0.0]
+        # A plain list, not a Java array, so results can be pickled.
+        return [float(v) for v in prediction_PI]
 
 
-class AnomalyDetector(ABC):
+class AnomalyDetector(LearnerParamsMixin, ABC):
     """
     Abstract base class for anomaly detector.
 
@@ -82,7 +86,38 @@ class AnomalyDetector(ABC):
 
 
 class MOAAnomalyDetector(AnomalyDetector):
-    def __init__(self, schema=None, CLI=None, random_seed=1, moa_learner=None):
+    @overload
+    def __init__(
+        self,
+        schema=None,
+        CLI: str | None = None,
+        random_seed=1,
+        moa_learner=None,
+    ): ...
+
+    @overload
+    def __init__(
+        self,
+        schema=None,
+        CLI: None = None,
+        random_seed=1,
+        moa_learner=None,
+        *,
+        options: Mapping[str, Any],
+    ): ...
+
+    def __init__(
+        self,
+        schema=None,
+        CLI=None,
+        random_seed=1,
+        moa_learner=None,
+        options: Mapping[str, Any] | None = None,
+    ):
+        """
+        :param options: MOA option names mapped to values. Use instead of CLI for values
+            with no CLI string, such as Java objects.
+        """
         super().__init__(schema=schema, random_seed=random_seed)
         self.CLI = CLI
         self.moa_learner = moa_learner
@@ -93,8 +128,7 @@ class MOAAnomalyDetector(AnomalyDetector):
         if self.schema is not None:
             self.moa_learner.setModelContext(self.schema.get_moa_header())
 
-        if self.CLI is not None:
-            self.moa_learner.getOptions().setViaCLIString(CLI)
+        set_moa_options(self.moa_learner, self.CLI, options)
 
         self.moa_learner.prepareForUse()
         self.moa_learner.resetLearning()
@@ -154,7 +188,7 @@ class ClusteringResult:
         return f"Centers: {self._centers}, Weights: {self._weights}, Radii: {self._radii}, IDs: {self._ids}"
 
 
-class Clusterer(ABC):
+class Clusterer(LearnerParamsMixin, ABC):
     def __init__(self, schema: Schema, random_seed=1):
         self.random_seed = random_seed
         self.schema = schema
@@ -225,11 +259,41 @@ class MOAClusterer(Clusterer):
     Attributes:
     - schema: The schema representing the instances. Defaults to None.
     - CLI: The command-line interface (CLI) configuration for the MOA learner.
-    - random_seed: The random seed for reproducibility. Defaults to 1.
     - moa_learner: The MOA learner object or class identifier.
+
+    Note: none of the wrapped MOA clusterers consume a random seed, so no
+    ``random_seed`` is accepted.
     """
 
-    def __init__(self, moa_learner, schema=None, CLI=None):
+    @overload
+    def __init__(
+        self,
+        moa_learner,
+        schema=None,
+        CLI: str | None = None,
+    ): ...
+
+    @overload
+    def __init__(
+        self,
+        moa_learner,
+        schema=None,
+        CLI: None = None,
+        *,
+        options: Mapping[str, Any],
+    ): ...
+
+    def __init__(
+        self,
+        moa_learner,
+        schema=None,
+        CLI=None,
+        options: Mapping[str, Any] | None = None,
+    ):
+        """
+        :param options: MOA option names mapped to values. Use instead of CLI for values
+            with no CLI string, such as Java objects.
+        """
         super().__init__(schema=schema)
         self.CLI = CLI
         # If moa_learner is a class identifier instead of an object
@@ -240,15 +304,10 @@ class MOAClusterer(Clusterer):
                 raise TypeError("Invalid MOA clusterer provided.")
         self.moa_learner = moa_learner
 
-        # self.moa_learner.setRandomSeed(self.random_seed)
-
         if self.schema is not None:
             self.moa_learner.setModelContext(self.schema.get_moa_header())
 
-        # If the CLI is None, we assume the object has already been configured
-        # or that default values should be used.
-        if self.CLI is not None:
-            self.moa_learner.getOptions().setViaCLIString(CLI)
+        set_moa_options(self.moa_learner, self.CLI, options)
 
         self.moa_learner.prepareForUse()
         self.moa_learner.resetLearningImpl()

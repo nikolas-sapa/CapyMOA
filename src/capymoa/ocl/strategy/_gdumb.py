@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor, nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 
 from capymoa.base import BatchClassifier
 from capymoa.ocl.evaluation.events import TestTaskBegin
@@ -44,13 +44,19 @@ class GDumb(BatchClassifier, Handler):
         self.fit_device = torch.device(device)
 
         self.original_state_dict = model.state_dict()
+        self._seed = seed
         self.coreset = GreedySampler(
-            capacity, schema.get_num_attributes(), torch.Generator().manual_seed(seed)
+            capacity,
+            {
+                "x": ((schema.get_num_attributes(),), torch.float32),
+                "y": ((), torch.long),
+            },
+            torch.Generator().manual_seed(seed),
         )
         self.loss_func = nn.CrossEntropyLoss()
 
     def batch_train(self, x: Tensor, y: Tensor) -> None:
-        self.coreset.update(x, y)
+        self.coreset.update(x=x, y=y)
 
     def batch_predict_proba(self, x: Tensor) -> Tensor:
         return self.model(x).softmax(dim=1)
@@ -60,14 +66,19 @@ class GDumb(BatchClassifier, Handler):
         Fit the model on the coreset.
         """
         # Assemble a dataset from the buffer
-        dataset = TensorDataset(*self.coreset.array())
+        dataset = self.coreset.dataset_view()
 
         self.model.load_state_dict(self.original_state_dict)
         self.model.to(self.fit_device)
         self.model.train()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
-        loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        # Derive the shuffling generator from the seed so the offline fit is
+        # reproducible independently of the global torch RNG state.
+        generator = torch.Generator().manual_seed(self._seed)
+        loader = DataLoader(
+            dataset, batch_size=self.batch_size, shuffle=True, generator=generator
+        )
 
         for epoch in range(self.epochs):
             for batch_x, batch_y in loader:

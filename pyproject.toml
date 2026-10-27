@@ -1,7 +1,7 @@
 [build-system]
 # wget is used to download the MOA jar file
 # stubgenj is used to generate the Python stub files for the MOA classes
-requires = ["hatchling", "hatch-build-scripts", "wget", "stubgenj", "invoke"]
+requires = ["hatchling", "wget", "stubgenj", "invoke"]
 # Build system: https://hatch.pypa.io
 # The main reason I chose hatch is its support for plugins allowing us to
 # download the MOA jar file before the build starts.
@@ -51,11 +51,12 @@ requires-python = ">=3.11"
 # See: https://packaging.python.org/en/latest/specifications/version-specifiers/#compatible-release
 dependencies = [
     "deprecated~=1.3",
-    "jpype1~=1.6,!=1.7.0",
+    "jpype1~=1.7,!=1.7.0",
     "matplotlib~=3.10",
     "numpy~=2.2",
     "pandas~=2.2",
     "scikit-learn~=1.8",
+    "scipy~=1.14",
     "seaborn~=0.13",
     "tqdm~=4.67",
     # `typing_extensions.override` is used across the core modules. It used to
@@ -89,9 +90,11 @@ dev=[
     "commitizen~=3.24",
     "invoke~=3.0",
     "jupyter~=1.1",
+    # Notebooks are stored as Jupytext `py:percent` scripts (see `notebooks/*/*.py`);
+    # `invoke docs.nb` uses this to regenerate the `.ipynb` files nbmake needs.
+    "jupytext==1.19.5",
     "nbmake~=1.5",
     "pytest-cov~=7.0",
-    "pytest-subtests~=0.15",
     "pytest-timeout~=2.4",
     "pytest-xdist~=3.8",
     "pytest~=9.0",
@@ -104,13 +107,15 @@ dev=[
 ]
 
 doc=[
-    "myst-parser",                 # Parses markdown files
-    "nbsphinx",                    # Sphinx extension to include Jupyter notebooks
-    "pydata-sphinx-theme",         # Theme for the documentation
-    "sphinx-llm",                  # Generates llms.txt/markdown pages for LLM consumption
-    "sphinx_design",               # Sphinx extension for design elements
-    "sphinx==8.1.3",               # Documentation generator
-    "sphinxcontrib-programoutput", # Output of commands in the documentation
+    "jupytext==1.19.5",            # Reads the notebooks' `py:percent` source format
+    "myst-nb~=1.4",                # Sphinx extension: parses MyST + Jupytext notebooks
+    "pydata-sphinx-theme~=0.19",   # Theme for the documentation; has built-in sphinx-copybutton styling
+    "sphinx-copybutton~=0.5",      # Adds a copy button to code blocks
+    "sphinx-llm~=1.1",             # Generates llms.txt/markdown pages for LLM consumption
+    "sphinx-reredirects~=1.1",     # Generates redirect stubs for moved/renamed doc pages
+    "sphinx_design~=0.7",          # Sphinx extension for design elements
+    "sphinx~=8.1",                 # Documentation generator
+    "sphinxcontrib-programoutput~=0.20", # Output of commands in the documentation
 ]
 
 [project.urls]
@@ -168,6 +173,9 @@ path = "src/capymoa/__about__.py"
 # Defines the directories included in the wheel package
 packages = ["src/capymoa", "src/moa-stubs", "src/com-stubs"]
 artifacts = ["src/capymoa/jar/moa.jar", "src/capymoa/jar/Home.class"]
+# _nbmock.py only exists to support running the docs notebooks in CI/local
+# dev; it has no use at runtime and shouldn't ship to end users.
+exclude = ["src/capymoa/_nbmock.py"]
 
 # src/moa-stubs and src/com-stubs are included in the git ignore file
 # that hatch inherits. To include them anyway we need to set ignore-vcs to true.
@@ -182,13 +190,10 @@ artifacts = ["src/capymoa/jar/moa.jar", "src/capymoa/jar/Home.class"]
 # that hatch inherits. To include them anyway we need to set ignore-vcs to true.
 ignore-vcs = true
 
-[[tool.hatch.build.hooks.build-scripts.scripts]]
-# Ensures that the MOA jar file is downloaded before the build starts.
-commands = [
-    "python -m invoke build.download-moa",
-    "python -m invoke build.stubs"
-]
-artifacts = []
+[tool.hatch.build.hooks.custom]
+# Ensures that the MOA jar file is downloaded and the Java stubs are
+# generated before the build starts. See hatch_build.py.
+path = "tools/hatch_build.py"
 
 [tool.semantic_release]
 assets = []
@@ -252,6 +257,13 @@ upload_to_vcs_release = true
 # Configuration for the formatter
 [tool.ruff]
 target-version = "py311"
+extend-exclude = [
+    # Notebooks stored as Jupytext `py:percent` scripts. They rely on the
+    # Jupyter/IPython runtime (e.g. the `display()` builtin, top-level
+    # expression auto-printing) rather than being run as plain scripts, so
+    # linting/formatting them as such produces false positives.
+    "notebooks",
+]
 
 [tool.ruff.lint]
 ignore = [
@@ -270,7 +282,7 @@ exclude_also = [
 
 [tool.coverage.run]
 omit = [
-    # omit pytorch-generated files in /tmp 
+    # omit pytorch-generated files in /tmp
     # https://stackoverflow.com/a/79415891
     "/tmp/*"
-] 
+]

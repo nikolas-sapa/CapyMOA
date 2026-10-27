@@ -1,5 +1,10 @@
 # FAQ
 
+## How do I add a tutorial notebook?
+Add the Jupytext `.py` notebook to the appropriate directory under
+`notebooks/`, then add its filename to that directory's `index.md` to place it
+in the ordered tutorial list.
+
 ## Where does my new learner go?
 You should add your new learner to the appropriate directory:
 - Classifiers go in `src/capymoa/classifier`.
@@ -48,15 +53,15 @@ tests for classifiers, regressors, and semi-supervised classifiers. You should
 not need to write any new test code. Instead, you should add your test's
 parameters to the appropriate test file:
 
-- `tests/test_classifiers.py` for classifiers.
+- `tests/resources/classifier.yml` for classifiers (tests in `tests/test_classifier.py`).
 - `tests/test_ssl_classifiers.py` for semi-supervised classifiers.
-- `tests/ocl/test_learners.py` for online continual learning learners.
+- `tests/ocl/test_strategy.py` for online continual learning learners.
 - `tests/test_regressors.py` for regressors.
-- `tests/test_anomaly.py` for anomaly detectors.
+- `tests/test_anomaly_detectors.py` for anomaly detectors.
 
 To run your tests, use the following command:
 ```bash
-python -m pytest -k MyNewLearner
+pytest -q tests/test_classifier.py -k MyNewLearner
 ```
 The `-k MyNewLearner` flag tells PyTest to run tests containing `MyNewLearner` in the test ID.
 
@@ -80,11 +85,11 @@ If a check fails, review the error messages and try to reproduce the issue local
 - **Tests:**  
     - **PyTest** (`invoke test.pytest`): Runs all unit tests in the `/tests` directory. See the [PyTest guide](./tests.rst#pytest).
     - **Doctest** (`invoke test.doctest`): Runs documentation tests. See the [doctest guide](./tests.rst#doctest).
-    - **Notebooks** (`invoke test.nb`): Executes all notebooks in `/notebooks` to ensure they run without errors. See the [notebook guide](./tests.rst#notebooks).
 - **Code Style:**  
     - **Formatting** (`invoke fmt`): Checks code formatting and style.
 - **Documentation:**  
-    - **Build** (`invoke docs.build`): Verifies that the documentation builds successfully. See the [documentation guide](./docs.rst).
+    - **Render Notebooks** (`invoke docs.nb`): Executes all notebooks in `/notebooks` to ensure they run without errors, and caches their outputs. See the [notebook guide](./docs.rst#notebooks).
+    - **Build** (`invoke docs.build`): Verifies that the documentation builds successfully, using the cached notebook outputs. See the [documentation guide](./docs.rst).
 
 ## How do I format my code?
 `invoke fmt` will format and check your code using `ruff`. Ruff is installed as part of

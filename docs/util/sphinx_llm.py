@@ -2,8 +2,9 @@ import re
 from pathlib import Path
 
 from docutils import nodes as docutils_nodes
-from nbsphinx import CodeAreaNode, FancyOutputNode
 from sphinx.application import Sphinx
+from sphinx_design.icons import fontawesome
+from sphinx_design.shared import PassthroughTextElement
 from sphinx_markdown_builder.translator import MarkdownTranslator
 
 _MARKDOWN_IMAGE_RE = re.compile(r"(!\[[^\]]*\]\()([^)\s]+)(\))")
@@ -62,24 +63,89 @@ def fix_markdown_image(app: Sphinx) -> None:
     app.connect("build-finished", _fix_markdown_image_links)
 
 
-def fix_nbsphinx(app: Sphinx) -> None:
-    """Fix sphinx_llm to render nbsphinx notebooks as markdown."""
+def fix_notebook_output_markdown(app: Sphinx) -> None:
+    """Fix sphinx_llm to render notebook cell outputs as markdown.
 
-    def _passthrough(self, node):
-        pass
+    myst-nb emits separate `.. raw:: html`, `.. raw:: latex`, and `.. raw:: text`
+    blocks for each cell output, one per builder. Every other translator only renders
+    the block matching its own format, but sphinx_markdown_builder renders raw nodes
+    unconditionally, so all three duplicates end up concatenated in the markdown
+    output. Patch it to skip the html/latex ones, keeping the plain-text one.
+    """
 
-    app.add_node(CodeAreaNode, markdown=(_passthrough, _passthrough), override=True)
-    app.add_node(FancyOutputNode, markdown=(_passthrough, _passthrough), override=True)
-
-    # nbsphinx emits separate `.. raw:: html`, `.. raw:: latex`, and `.. raw:: text`
-    # blocks for each cell output, one per builder. Every other translator only renders
-    # the block matching its own format, but sphinx_markdown_builder renders raw nodes
-    # unconditionally, so all three duplicates ended up concatenated in the markdown
-    # output once the CodeAreaNode/FancyOutputNode wrappers above stopped hiding them.
-    # Patch it to skip the html/latex ones, keeping the plain-text one.
     def visit_raw(self, node):
         if node.get("format") in ("html", "latex"):
             raise docutils_nodes.SkipNode
 
+    def _passthrough(self, node):
+        pass
+
     MarkdownTranslator.visit_raw = visit_raw
     MarkdownTranslator.depart_raw = _passthrough
+
+
+def fix_unsupported_markdown_nodes(app: Sphinx) -> None:
+    """Teach sphinx-llm's Markdown builder about nodes it doesn't recognise.
+
+    ``sphinx_design`` only registers visitors for the html/latex/text/man/texinfo
+    builders (see ``sphinx_design.extension.setup_extension``), and
+    ``sphinx_markdown_builder`` has no support for docutils' citation or figure
+    caption nodes. Without visitors, sphinx_markdown_builder's ``unknown_visit``
+    logs a warning and drops the whole subtree, silently losing card titles,
+    icons, citation text (and its anchor, breaking the citation reference link),
+    and figure captions.
+    """
+
+    def _noop(self, node):
+        pass
+
+    def visit_abbreviation(self, node):
+        self.add(node.astext())
+        raise docutils_nodes.SkipNode
+
+    # Card/link titles and `:fas:`/`:fab:` icons: nothing sensible to render as
+    # Markdown, so just skip over them like the text/man/texinfo builders do.
+    app.add_node(
+        PassthroughTextElement,
+        markdown=(_noop, _noop),
+        override=True,
+    )
+    app.add_node(fontawesome, markdown=(_noop, _noop), override=True)
+    MarkdownTranslator.visit_abbreviation = visit_abbreviation
+
+    # Citations (`.. [key] ...`) are structurally the same as footnotes, which
+    # MarkdownTranslator already supports.
+    def visit_citation(self, node):
+        self.visit_footnote(node)
+
+    def depart_citation(self, node):
+        self.depart_footnote(node)
+
+    MarkdownTranslator.visit_citation = visit_citation
+    MarkdownTranslator.depart_citation = depart_citation
+
+    # Figure captions have no dedicated visitor; render them like a paragraph.
+    def visit_caption(self, node):
+        self.visit_paragraph(node)
+
+    def depart_caption(self, node):
+        self.depart_paragraph(node)
+
+    MarkdownTranslator.visit_caption = visit_caption
+    MarkdownTranslator.depart_caption = depart_caption
+
+    # Generic `{admonition}` directives (e.g. the "See also" boxes in the
+    # notebook index pages) produce a plain docutils `admonition` node with an
+    # explicit `title` child, unlike `note`/`warning`/etc., which
+    # sphinx_markdown_builder already renders as "#### NOTE" boxes and have no
+    # title child of their own. There's no visitor for the generic node at
+    # all, so descend into it like a plain container: the title child renders
+    # as a heading and the body renders as normal Markdown.
+    def visit_admonition(self, node):
+        pass
+
+    def depart_admonition(self, node):
+        pass
+
+    MarkdownTranslator.visit_admonition = visit_admonition
+    MarkdownTranslator.depart_admonition = depart_admonition

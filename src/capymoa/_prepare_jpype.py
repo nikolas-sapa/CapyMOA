@@ -41,7 +41,14 @@ def _get_java_home() -> Path:
         java_class_path = _CAPYMOA_PACKAGE_ROOT / "jar"
         try:
             result = subprocess.run(
-                ["java", "-classpath", java_class_path.as_posix(), "Home"],
+                [
+                    "java",
+                    # Disable all logs since it can interfere with path parsing
+                    "-Xlog:disable",
+                    "-classpath",
+                    java_class_path.as_posix(),
+                    "Home",
+                ],
                 capture_output=True,
                 check=True,
             )
@@ -54,11 +61,15 @@ def _get_java_home() -> Path:
                 f"Failed to determine java.home: {e.stderr.decode().strip()}"
             )
 
+        # The last line of the output must contain the path.
         java_home = Path(result.stdout.decode().strip())
 
-        assert java_home.exists(), (
-            f"The java.home reported by the java program does not exist: {java_home}"
-        )
+        if not java_home.exists():
+            raise CapymoaImportError(
+                f"The java.home reported by the java program does not exist: "
+                f"`{java_home}`. Try setting the JAVA_HOME environment variable "
+                "explicitly. See https://capymoa.org/setup/#java."
+            )
 
     return java_home
 
@@ -104,7 +115,11 @@ def _start_jpype():
     # Some versions of Java require this flag to allow access to parts of java.lang.System
     # https://stackoverflow.com/q/79725728
     args.append("--enable-native-access=ALL-UNNAMED")
-    jpype.startJVM(jpype.getDefaultJVMPath(), *args)
+    # ignoreUnrecognized: on unsupported JVMs (e.g. Java 8), the flag above causes
+    # JVM creation to fail with an opaque error before JPype's own clear
+    # "Java version too old" check ever runs. Ignoring unrecognized options lets
+    # that check surface instead. https://github.com/jpype-project/jpype/issues/1306
+    jpype.startJVM(jpype.getDefaultJVMPath(), *args, ignoreUnrecognized=True)
 
     # The JVM automatically shutdown with python, no need to explicitly call the shutdown method
     # https://jpype.readthedocs.io/en/latest/userguide.html#shutdownjvm
